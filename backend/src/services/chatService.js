@@ -21,6 +21,7 @@ class ChatService {
       this.s3 = new AWS.S3();
       this.costExplorer = new AWS.CostExplorer();
       this.elbv2 = new AWS.ELBv2();
+      this.cloudwatch = new AWS.CloudWatch();
       console.log('AWS service clients initialized successfully');
     } catch (error) {
       console.error('Error initializing AWS services:', error.message);
@@ -89,6 +90,73 @@ class ChatService {
       throw new Error(`Failed to fetch cost data: ${error.message}`);
     }
   }
+  
+  async getEC2Metrics(instanceId, metricName = 'CPUUtilization', periodSeconds = 300) {
+    try {
+      console.log(`Fetching ${metricName} metrics for EC2 instance ${instanceId}`);
+      
+      // Calculate the time range for the last 5 minutes
+      const endTime = new Date();
+      const startTime = new Date(endTime - (periodSeconds * 1000));
+      
+      const params = {
+        MetricName: metricName,
+        Namespace: 'AWS/EC2',
+        Period: periodSeconds,
+        StartTime: startTime,
+        EndTime: endTime,
+        Statistics: ['Average', 'Maximum'],
+        Dimensions: [
+          {
+            Name: 'InstanceId',
+            Value: instanceId
+          }
+        ]
+      };
+      
+      const metricsData = await this.cloudwatch.getMetricStatistics(params).promise();
+      console.log(`Received EC2 metrics for ${instanceId}:`, JSON.stringify(metricsData, null, 2));
+      
+      let cpuAvg = 0;
+      let cpuMax = 0;
+      
+      if (metricsData.Datapoints && metricsData.Datapoints.length > 0) {
+        // Sort by timestamp to get the most recent
+        const sortedPoints = metricsData.Datapoints.sort((a, b) => 
+          new Date(b.Timestamp) - new Date(a.Timestamp));
+        
+        cpuAvg = sortedPoints[0].Average;
+        cpuMax = sortedPoints[0].Maximum;
+      }
+      
+      return {
+        instanceId,
+        metrics: {
+          name: metricName,
+          average: cpuAvg.toFixed(2),
+          maximum: cpuMax.toFixed(2),
+          unit: '%',
+          period: periodSeconds,
+          periodDescription: this.describePeriod(periodSeconds),
+          timestamp: new Date().toISOString()
+        }
+      };
+    } catch (error) {
+      console.error(`Error fetching EC2 metrics for ${instanceId}:`, error);
+      return {
+        instanceId,
+        error: `Failed to fetch ${metricName} metrics: ${error.message}`
+      };
+    }
+  }
+  
+  describePeriod(periodSeconds) {
+    if (periodSeconds <= 300) return 'últimos 5 minutos';
+    if (periodSeconds <= 3600) return 'última hora';
+    if (periodSeconds <= 86400) return 'último dia';
+    if (periodSeconds <= 604800) return 'última semana';
+    return `últimos ${Math.round(periodSeconds / 86400)} dias`;
+  }
 
   async getAWSInfo(query) {
     const awsData = {};
@@ -127,16 +195,49 @@ class ChatService {
             for (const reservation of ec2Response.Reservations) {
               for (const instance of reservation.Instances) {
                 const nameTag = instance.Tags ? instance.Tags.find(tag => tag.Key === 'Name') : null;
-                
-                awsData.ec2.push({
+                const instanceName = nameTag ? nameTag.Value : instance.InstanceId;
+                const instanceObj = {
                   id: instance.InstanceId,
                   type: instance.InstanceType,
                   state: instance.State.Name,
-                  name: nameTag ? nameTag.Value : instance.InstanceId,
+                  name: instanceName,
                   publicIp: instance.PublicIpAddress || 'N/A',
                   privateIp: instance.PrivateIpAddress || 'N/A',
                   launchTime: instance.LaunchTime
-                });
+                };
+                
+                // Check if query is about EC2 CPU usage or metrics
+                if (queryLower.includes('cpu') || 
+                    queryLower.includes('métricas') || 
+                    queryLower.includes('metrics') || 
+                    queryLower.includes('performance') || 
+                    queryLower.includes('desempenho') || 
+                    queryLower.includes('consumo') || 
+                    queryLower.includes('uso')) {
+                  
+                  // If query mentions a specific instance name, only get metrics for that instance
+                  const instanceNameLower = instanceName.toLowerCase();
+                  if (!queryLower.includes(instanceNameLower) && 
+                      !queryLower.includes(instance.InstanceId.toLowerCase()) &&
+                      queryLower.includes('mongo-homol')) {
+                    // Skip instances not matching the specific query
+                    // This is specifically for the "mongo-homol" instance mentioned in the query
+                    if (instanceNameLower !== 'mongo-homol') {
+                      continue;
+                    }
+                  }
+                  
+                  // Get CPU metrics for this instance
+                  try {
+                    const metrics = await this.getEC2Metrics(instance.InstanceId);
+                    instanceObj.metrics = metrics.metrics;
+                  } catch (metricsError) {
+                    console.error(`Error getting metrics for instance ${instance.InstanceId}:`, metricsError);
+                    instanceObj.metricsError = metricsError.message;
+                  }
+                }
+                
+                awsData.ec2.push(instanceObj);
               }
             }
           }
@@ -255,9 +356,11 @@ When discussing costs:
 
 When discussing EC2 instances:
 - Include instance types, states, and IDs
-- Mention any relevant performance metrics
+- Present CPU utilization percentages when available (average and maximum values)
+- Mention any relevant performance metrics with time period context
 - List public IPs if available
 - Group by running/stopped state if there are many instances
+- For CPU usage queries, focus on the specific instance mentioned in the query
 
 When discussing S3 buckets:
 - Include creation dates, regions, and bucket names
