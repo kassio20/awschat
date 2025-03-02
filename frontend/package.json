@@ -1,0 +1,41 @@
+{
+  "name": "aws-client-portal-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@aws-amplify/ui-react": "^5.x",
+    "@emotion/react": "^11.x",
+    "@emotion/styled": "^11.x",
+    "@mui/material": "^5.x",
+    "@mui/icons-material": "^5.x",
+    "axios": "^1.x",
+    "react": "^18.x",
+    "react-dom": "^18.x",
+    "react-router-dom": "^6.x",
+    "react-scripts": "5.x",
+    "recharts": "^2.x"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
