@@ -1,4 +1,4 @@
-# AWS Chat - RDS Cost Analysis Tool
+# AWS Chat - IA Analysis Tool
 
 A real-time chat interface for querying AWS RDS costs and usage information using natural language processing. This application enables users to get detailed cost insights about their AWS RDS instances through simple conversational queries.
 
